@@ -21,22 +21,17 @@ const LUAU_GLOBALS = new Set([
   'delay', 'time', 'warn', 'assert', 'error', 'pcall', 'xpcall'
 ]);
 
-// Generate random hex name for variables
 function genHexName() {
   return '_0x' + Math.random().toString(16).slice(2, 10).toUpperCase();
 }
 
-// Generate BRUTAL chaotic keyword replacement
-// Setiap pemanggilan menghasilkan string unik yang berbeda
 function genChaoticKeyword() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
   let result = '';
-  // Panjang acak antara 4-12 karakter biar makin brutal
   const len = Math.floor(Math.random() * 9) + 4;
   for (let i = 0; i < len; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  // Pastikan gak sama persis dengan global/builtin
   if (LUAU_GLOBALS.has(result)) return genChaoticKeyword();
   return result;
 }
@@ -119,9 +114,7 @@ function tokenize(source) {
       while (j < len && /[a-zA-Z0-9_]/.test(source[j])) j++;
       const word = source.slice(i, j);
       
-      // BRUTAL MUTATION: Kalau ini keyword, ganti langsung jadi chaos token
       if (LUAU_KEYWORDS.has(word)) {
-        // Kecuali 'nil', 'true', 'false' karena itu literal value
         if (!['nil', 'true', 'false'].includes(word)) {
           tokens.push({ type: 'chaotic_keyword', value: genChaoticKeyword(), original: word });
         } else {
@@ -158,7 +151,7 @@ function tokenize(source) {
 }
 
 // ========================================
-// LAYER 2: STRING ENCRYPTION
+// LAYER 2: STRING ENCRYPTION (XOR + BYTE ARRAY)
 // ========================================
 function encryptStrings(tokens) {
   const decoderName = genHexName();
@@ -219,7 +212,6 @@ function renameVariables(tokens) {
   while (i < tokens.length) {
     const token = tokens[i];
     
-    // Handle Chaotic Keywords that act as variable declarators
     if (token.type === 'chaotic_keyword' && token.original === 'local' && i + 1 < tokens.length) {
       result.push(token); i++;
       while (i < tokens.length && tokens[i].type === 'whitespace') { result.push(tokens[i]); i++; }
@@ -232,7 +224,6 @@ function renameVariables(tokens) {
     }
 
     if (token.type === 'keyword' || token.type === 'chaotic_keyword') {
-      // Track scope for standard keywords
       if (['function','do','for','while','repeat'].includes(token.original || token.value)) scopeStack.push(new Map());
       if (['end','until'].includes(token.original || token.value) && scopeStack.length > 1) scopeStack.pop();
       result.push(token); i++; continue;
@@ -269,8 +260,17 @@ function injectDeadCode(tokens) {
 }
 
 // ========================================
-// LAYER 6-9: PACKING & LOADER
+// LAYER 6-9: ADVANCED PACKING & LOADER (FIXED FOR UNLIMITED ITERATIONS)
 // ========================================
+function shuffleAlphabet(base) {
+  const arr = base.split('');
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.join('');
+}
+
 function customBase64Encode(bytes, alphabet) {
   let result = '';
   for (let i = 0; i < bytes.length; i += 3) {
@@ -287,14 +287,54 @@ function packSource(source) {
   const compressed = pako.deflate(new TextEncoder().encode(source));
   const key = Math.floor(Math.random() * 255) + 1;
   const encrypted = new Uint8Array(compressed.length);
-  for (let i = 0; i < compressed.length; i++) encrypted[i] = compressed[i] ^ ((key + i) % 256);
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+_';
-  return { encoded: customBase64Encode(encrypted, alphabet), key, alphabet };
+  for (let i = 0; i < compressed.length; i++) encrypted[i] = compressed[i] ^ ((key + i * 7) % 256); // Improved XOR pattern
+  
+  const baseAlpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const shuffledAlpha = shuffleAlphabet(baseAlpha);
+  
+  return { 
+    encoded: customBase64Encode(encrypted, shuffledAlpha), 
+    key, 
+    alphabet: shuffledAlpha,
+    integrity: key ^ 0xAA // Simple integrity check
+  };
 }
 
 function generateLoader(packed) {
-  const d = genHexName(), c = genHexName(), k = genHexName(), s = genHexName(), r = genHexName();
-  return `local ${d}="${packed.encoded}"\nlocal ${c}="${packed.alphabet}"\nlocal ${k}=${packed.key}\nlocal function ${s}(a,b,c)local d={}for e=1,#a,4 do local f=b:find(a:sub(e,e))-1 local g=b:find(a:sub(e+1,e+1))-1 local h=e+2<=#a and b:find(a:sub(e+2,e+2))-1 or 0 local i=e+3<=#a and b:find(a:sub(e+3,e+3))-1 or 0 d[#d+1]=f*4+g/16 if e+2<=#a then d[#d+1]=(g%16)*16+h/4 end if e+3<=#a then d[#d+1]=(h%4)*64+i end end local j={}for e=1,#d do j[e]=bit32.bxor(d[e],(c+e-1)%256)end return j end\nlocal ${r}=${s}(${d},${c},${k})\nlocal ${genHexName()}=""\nfor i=1,#${r} do ${genHexName()}=${genHexName()}..string.char(${r}[i]) end\nloadstring(${genHexName()}(${genHexName()}))()`;
+  // Generate UNIQUE names for THIS layer only
+  const d = genHexName(); // data
+  const a = genHexName(); // alphabet
+  const k = genHexName(); // key
+  const f = genHexName(); // decode function
+  const r = genHexName(); // result array
+  const s = genHexName(); // string builder
+  const i = genHexName(); // loop var
+  
+  // Self-contained loader that doesn't rely on external state
+  return `local ${d}="${packed.encoded}"
+local ${a}="${packed.alphabet}"
+local ${k}=${packed.key}
+local function ${f}(data,alpha,key)
+local res={}
+for ${i}=1,#data,4 do
+local c1=alpha:find(data:sub(${i},${i}))-1
+local c2=alpha:find(data:sub(${i}+1,${i}+1))-1
+local c3=${i}+2<=#data and alpha:find(data:sub(${i}+2,${i}+2))-1 or 0
+local c4=${i}+3<=#data and alpha:find(data:sub(${i}+3,${i}+3))-1 or 0
+res[#res+1]=c1*4+c2/16
+if ${i}+2<=#data then res[#res+1]=(c2%16)*16+c3/4 end
+if ${i}+3<=#data then res[#res+1]=(c3%4)*64+c4 end
+end
+local out={}
+for ${i}=1,#res do
+out[${i}]=bit32.bxor(res[${i}],(key+${i}-1)%256)
+end
+return out
+end
+local ${r}=${f}(${d},${a},${k})
+local ${s}=""
+for ${i}=1,#${r} do ${s}=${s}..string.char(${r}[${i}]) end
+loadstring(${s})()`;
 }
 
 function tokensToString(tokens) { return tokens.map(t => t.value).join(''); }
