@@ -1,17 +1,5 @@
 {
-  "name": "luau-obfuscator",
+  "name": "obf",
   "version": "1.0.0",
-  "description": "Ultimate Luau Obfuscator - Level Dewa",
-  "main": "src/index.js",
-  "type": "module",
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
-  },
-  "dependencies": {
-    "pako": "^2.1.0"
-  },
-  "devDependencies": {
-    "wrangler": "^3.0.0"
-  }
+  "private": true
 }
