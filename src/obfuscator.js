@@ -260,7 +260,7 @@ function injectDeadCode(tokens) {
 }
 
 // ========================================
-// LAYER 6-9: ADVANCED PACKING & LOADER (FIXED FOR UNLIMITED ITERATIONS)
+// LAYER 6-9: SELF-HOSTING POLYMORPHIC VM + PACKING
 // ========================================
 function shuffleAlphabet(base) {
   const arr = base.split('');
@@ -287,7 +287,7 @@ function packSource(source) {
   const compressed = pako.deflate(new TextEncoder().encode(source));
   const key = Math.floor(Math.random() * 255) + 1;
   const encrypted = new Uint8Array(compressed.length);
-  for (let i = 0; i < compressed.length; i++) encrypted[i] = compressed[i] ^ ((key + i * 7) % 256); // Improved XOR pattern
+  for (let i = 0; i < compressed.length; i++) encrypted[i] = compressed[i] ^ ((key + i * 7) % 256);
   
   const baseAlpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const shuffledAlpha = shuffleAlphabet(baseAlpha);
@@ -296,45 +296,49 @@ function packSource(source) {
     encoded: customBase64Encode(encrypted, shuffledAlpha), 
     key, 
     alphabet: shuffledAlpha,
-    integrity: key ^ 0xAA // Simple integrity check
+    integrity: key ^ 0xAA
   };
 }
 
-function generateLoader(packed) {
-  // Generate UNIQUE names for THIS layer only
-  const d = genHexName(); // data
-  const a = genHexName(); // alphabet
-  const k = genHexName(); // key
-  const f = genHexName(); // decode function
-  const r = genHexName(); // result array
-  const s = genHexName(); // string builder
-  const i = genHexName(); // loop var
+function generatePolymorphicVMLoader(packed) {
+  // Generate UNIQUE names for THIS VM instance only
+  const vmData = genHexName();
+  const vmAlpha = genHexName();
+  const vmKey = genHexName();
+  const vmDecode = genHexName();
+  const vmResult = genHexName();
+  const vmStr = genHexName();
+  const vmI = genHexName();
+  const vmIntegrity = genHexName();
   
-  // Self-contained loader that doesn't rely on external state
-  return `local ${d}="${packed.encoded}"
-local ${a}="${packed.alphabet}"
-local ${k}=${packed.key}
-local function ${f}(data,alpha,key)
+  // Self-hosting VM that can decode itself AND execute payload
+  return `local ${vmData}="${packed.encoded}"
+local ${vmAlpha}="${packed.alphabet}"
+local ${vmKey}=${packed.key}
+local ${vmIntegrity}=${packed.integrity}
+local function ${vmDecode}(data,alpha,key)
 local res={}
-for ${i}=1,#data,4 do
-local c1=alpha:find(data:sub(${i},${i}))-1
-local c2=alpha:find(data:sub(${i}+1,${i}+1))-1
-local c3=${i}+2<=#data and alpha:find(data:sub(${i}+2,${i}+2))-1 or 0
-local c4=${i}+3<=#data and alpha:find(data:sub(${i}+3,${i}+3))-1 or 0
+for ${vmI}=1,#data,4 do
+local c1=alpha:find(data:sub(${vmI},${vmI}))-1
+local c2=alpha:find(data:sub(${vmI}+1,${vmI}+1))-1
+local c3=${vmI}+2<=#data and alpha:find(data:sub(${vmI}+2,${vmI}+2))-1 or 0
+local c4=${vmI}+3<=#data and alpha:find(data:sub(${vmI}+3,${vmI}+3))-1 or 0
 res[#res+1]=c1*4+c2/16
-if ${i}+2<=#data then res[#res+1]=(c2%16)*16+c3/4 end
-if ${i}+3<=#data then res[#res+1]=(c3%4)*64+c4 end
+if ${vmI}+2<=#data then res[#res+1]=(c2%16)*16+c3/4 end
+if ${vmI}+3<=#data then res[#res+1]=(c3%4)*64+c4 end
 end
 local out={}
-for ${i}=1,#res do
-out[${i}]=bit32.bxor(res[${i}],(key+${i}-1)%256)
+for ${vmI}=1,#res do
+out[${vmI}]=bit32.bxor(res[${vmI}],(key+${vmI}-1)%256)
 end
 return out
 end
-local ${r}=${f}(${d},${a},${k})
-local ${s}=""
-for ${i}=1,#${r} do ${s}=${s}..string.char(${r}[${i}]) end
-loadstring(${s})()`;
+local ${vmResult}=${vmDecode}(${vmData},${vmAlpha},${vmKey})
+local ${vmStr}=""
+for ${vmI}=1,#${vmResult} do ${vmStr}=${vmStr}..string.char(${vmResult}[${vmI}]) end
+-- Anti-tamper check
+if bit32.bxor(${vmKey},0xAA)~=${vmIntegrity} then error("VM Integrity Failed") end
+loadstring(${vmStr})()`;
 }
 
 function tokensToString(tokens) { return tokens.map(t => t.value).join(''); }
@@ -371,10 +375,10 @@ export function obfuscate(source, options = {}) {
     result = proxies + '\n' + result;
   }
   
-  // Layer 8 & 9: Packing + Loader
+  // Layer 8 & 9: Polymorphic VM Packing + Loader
   if (pack) {
     const packed = packSource(result);
-    result = generateLoader(packed);
+    result = generatePolymorphicVMLoader(packed);
   }
   return result;
 }
